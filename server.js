@@ -9,6 +9,55 @@ const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 app.use(express.json());
+// ✅ Universal analyze endpoint
+app.get("/analyze", async (req, res) => {
+  try {
+    const { url } = req.query;
+
+    if (!url) {
+      return res.status(400).json({ error: "URL is required" });
+    }
+
+    // Handle YouTube
+    if (ytdl.validateURL(url)) {
+      const info = await ytdl.getInfo(url);
+      const formats = info.formats.map(f => ({
+        quality: f.qualityLabel,
+        mimeType: f.mimeType,
+        url: f.url
+      }));
+      return res.json({ platform: "youtube", title: info.videoDetails.title, formats });
+    }
+
+    // Handle Instagram
+    if (url.includes("instagram.com")) {
+      const response = await axios.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
+      const $ = cheerio.load(response.data);
+      const video = $("meta[property='og:video']").attr("content");
+      const image = $("meta[property='og:image']").attr("content");
+      return res.json({ platform: "instagram", video, image });
+    }
+
+    // Handle Pinterest
+    if (url.includes("pinterest.com")) {
+      const response = await axios.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0" }
+      });
+      const $ = cheerio.load(response.data);
+      const image = $("meta[property='og:image']").attr("content");
+      return res.json({ platform: "pinterest", image });
+    }
+
+    return res.status(400).json({ error: "Unsupported URL" });
+
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Failed to fetch media" });
+  }
+});
+
 
 /**
  * Universal analyze route

@@ -1,80 +1,94 @@
 import express from "express";
 import cors from "cors";
-import axios from "axios";
-import * as cheerio from "cheerio";   // ✅ fixed import
 import ytdl from "ytdl-core";
+import axios from "axios";
+import * as cheerio from "cheerio";
 
 const app = express();
+const PORT = process.env.PORT || 5000;
+
 app.use(cors());
 app.use(express.json());
 
-// ✅ Root test
-app.get("/", (req, res) => {
-  res.send("🚀 Media Grab Backend is Running!");
-});
+/**
+ * Universal analyze route
+ */
+app.post("/analyze", async (req, res) => {
+  const { platform, url } = req.body;
 
-// ✅ YouTube downloader
-app.get("/api/youtube", async (req, res) => {
+  if (!platform || !url) {
+    return res.status(400).json({ error: "Platform and URL are required" });
+  }
+
   try {
-    const { url } = req.query;
-    if (!url || !ytdl.validateURL(url)) {
-      return res.status(400).json({ error: "Invalid YouTube URL" });
+    // ✅ YouTube Handler
+    if (platform === "youtube") {
+      if (!ytdl.validateURL(url)) {
+        return res.status(400).json({ error: "Invalid YouTube URL" });
+      }
+
+      const info = await ytdl.getInfo(url);
+      const formats = info.formats
+        .filter(f => f.url && f.qualityLabel)
+        .map(f => ({
+          icon: "🎬",
+          label: f.qualityLabel,
+          url: f.url,
+        }));
+
+      return res.json({
+        icon: "📺",
+        title: info.videoDetails.title,
+        description: info.videoDetails.description,
+        downloads: formats,
+      });
     }
 
-    const info = await ytdl.getInfo(url);
-    const formats = info.formats.map(f => ({
-      quality: f.qualityLabel,
-      mimeType: f.mimeType,
-      url: f.url
-    }));
+    // ✅ Instagram Handler
+    if (platform === "instagram") {
+      const response = await axios.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+      const $ = cheerio.load(response.data);
+      const video = $("meta[property='og:video']").attr("content");
+      const image = $("meta[property='og:image']").attr("content");
 
-    res.json({ title: info.videoDetails.title, formats });
+      return res.json({
+        icon: "📷",
+        title: "Instagram Post",
+        description: video ? "Video Post" : "Image Post",
+        downloads: [
+          { icon: video ? "🎥" : "🖼️", label: video ? "Video" : "Image", url: video || image },
+        ],
+      });
+    }
+
+    // ✅ Pinterest Handler
+    if (platform === "pinterest") {
+      const response = await axios.get(url, {
+        headers: { "User-Agent": "Mozilla/5.0" },
+      });
+      const $ = cheerio.load(response.data);
+      const image = $("meta[property='og:image']").attr("content");
+
+      return res.json({
+        icon: "📌",
+        title: "Pinterest Image",
+        description: "Pinterest post media",
+        downloads: [{ icon: "🖼️", label: "Image", url: image }],
+      });
+    }
+
+    return res.status(400).json({ error: "Invalid platform" });
   } catch (err) {
-    console.error("YouTube Error:", err.message);
-    res.status(500).json({ error: err.message });
+    console.error(err.message);
+    return res.status(500).json({ error: "Failed to fetch media" });
   }
 });
 
-// ✅ Instagram downloader (basic example)
-app.get("/api/instagram", async (req, res) => {
-  try {
-    const { url } = req.query;
-    if (!url) return res.status(400).json({ error: "URL required" });
+// Old routes (optional, for testing)
+app.get("/", (req, res) => res.send("✅ MediaGrab backend running!"));
 
-    const response = await axios.get(url, {
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
-
-    const $ = cheerio.load(response.data);
-    const video = $("meta[property='og:video']").attr("content");
-    const image = $("meta[property='og:image']").attr("content");
-
-    res.json({ video, image });
-  } catch (err) {
-    console.error("Instagram Error:", err.message);
-    res.status(500).json({ error: "Instagram fetch failed" });
-  }
+app.listen(PORT, () => {
+  console.log(`✅ Server running on http://localhost:${PORT}`);
 });
-
-// ✅ Pinterest downloader (basic)
-app.get("/api/pinterest", async (req, res) => {
-  try {
-    const { url } = req.query;
-    if (!url) return res.status(400).json({ error: "URL required" });
-
-    const response = await axios.get(url, {
-      headers: { "User-Agent": "Mozilla/5.0" }
-    });
-
-    const $ = cheerio.load(response.data);
-    const image = $("meta[property='og:image']").attr("content");
-
-    res.json({ image });
-  } catch (err) {
-    console.error("Pinterest Error:", err.message);
-    res.status(500).json({ error: "Pinterest fetch failed" });
-  }
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`✅ Server running on port ${PORT}`));
